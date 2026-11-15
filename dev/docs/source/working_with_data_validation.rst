@@ -221,8 +221,16 @@ Note, when using the ``list`` validation with a list of strings, like in the
 last example above, Excel stores the strings internally as a Comma Separated
 Variable string. The total length for this string, including commas, cannot
 exceed the Excel limit of 255 characters. For longer sets of data you should
-use a range reference like the prior example above. Also any double quotes in
-strings like ``'"Hello"'`` must be double quoted like this ``'""Hello""'``.
+use a range reference like the prior example above.
+
+An option literal that itself contains a comma is quoted automatically so that
+Excel keeps it as a single option instead of splitting it at that comma. Thus
+a list such as ``["a,b", "c"]`` is stored as two dropdown options, ``a,b`` and
+``c``; you do not need to add the surrounding quotes yourself. Also any double
+quotes in strings like ``'"Hello"'`` must be double quoted like this
+``'""Hello""'``. This manual doubling is the caller's responsibility and is
+left untouched, including when an option that contains doubled quotes is also
+quoted automatically because it contains a comma.
 
 
 maximum

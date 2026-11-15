@@ -2905,9 +2905,11 @@ class Worksheet(xmlwriter.XMLwriter):
             )
             return -2
 
-        # Check that the input list doesn't exceed the maximum length.
+        # Check that the input list doesn't exceed the maximum length. The
+        # limit is measured against the comma joined items, matching the
+        # documented 255 character Excel limit and the historical behavior.
         if options["validate"] == "list" and isinstance(options["value"], list):
-            formula = self._csv_join(*options["value"])
+            formula = self._encode_list_items(options["value"])
             if _utf16_len(formula) > 255:
                 warn(
                     f"Length of list items '{formula}' exceeds Excel's limit of "
@@ -6095,13 +6097,44 @@ class Worksheet(xmlwriter.XMLwriter):
 
         return data
 
-    def _csv_join(self, *items):
-        # Create a csv string for use with data validation formulas and lists.
+    def _encode_list_items(self, items):
+        # Encode a Python list of option literals into the inline, comma
+        # separated item string used by an Excel list data validation, without
+        # the outer pair of formula quotes.
+        #
+        # Excel parses this string as a CSV record. A literal comma inside an
+        # option must be protected by wrapping that option in double quotes,
+        # otherwise it is silently treated as an item separator:
+        # ["a,b", "c"] is encoded as '"a,b",c'. Any double quote inside such a
+        # wrapped option is itself escaped by doubling it, so ['a"b,c', 'z']
+        # becomes '"a""b,c",z'. Options without a comma are written verbatim.
+        #
+        # Quotes inside options without a comma are never rewritten: the
+        # documented convention is that callers double any literal quotes
+        # themselves, e.g. '""Hello""' for the "Hello" literal. That manual
+        # escaping stays valid unchanged and is never touched here.
+        encoded_items = []
 
-        # Convert non string types to string.
-        items = [str(item) if not isinstance(item, str) else item for item in items]
+        for item in items:
+            if not isinstance(item, str):
+                item = str(item)
 
-        return ",".join(items)
+            if "," in item:
+                item = '"' + item.replace('"', '""') + '"'
+
+            encoded_items.append(item)
+
+        return ",".join(encoded_items)
+
+    def _encode_list_formula(self, items):
+        # Encode list options into the full <formula1> string written to the
+        # worksheet XML. Excel stores an inline list as a string literal: the
+        # CSV encoded item string is itself wrapped in one pair of double
+        # quotes, and every double quote inside that string is doubled. For
+        # example ["a,b", "c"] yields '"""a,b"",c"' and a plain list
+        # ["Foo", "Bar"] yields '"Foo,Bar"'.
+        inner = self._encode_list_items(items)
+        return '"' + inner.replace('"', '""') + '"'
 
     def _escape_url(self, url):
         # Don't escape URL if it looks already escaped.
@@ -7638,8 +7671,7 @@ class Worksheet(xmlwriter.XMLwriter):
         # Write the <formula1> element.
 
         if isinstance(formula, list):
-            formula = self._csv_join(*formula)
-            formula = f'"{formula}"'
+            formula = self._encode_list_formula(formula)
         else:
             # Check if the formula is a number.
             try:
